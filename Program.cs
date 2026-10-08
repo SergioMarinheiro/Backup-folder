@@ -20,10 +20,10 @@ namespace Replica
         //private static Timer aTimer;
         static string source = "";
         static string replica = "";
-        static string logF = "";
+        static string LogPath = "";
         static int gap;
         private static ConcurrentQueue<(string SourcePath, string? OldSourcePath, WatcherChangeTypes ChangeType)> changes = new();
-      
+
         private static void OnChanged(object sender, FileSystemEventArgs e)
         {
             if (e.ChangeType != WatcherChangeTypes.Changed)
@@ -69,6 +69,23 @@ namespace Replica
                 PrintException(ex.InnerException);
             }
         }
+        private static void Log(Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch)
+        {
+            foreach (var action in batch)
+            {
+                if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                {
+                    Console.WriteLine($"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} (Old Path: {action.Value.OldSourcePath})");
+                    File.AppendAllText(LogPath, $"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} (Old Path: {action.Value.OldSourcePath}) {Environment.NewLine}");
+                }
+                else
+                {
+                    Console.WriteLine($"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType}");
+                    File.AppendAllText(LogPath, $"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} {Environment.NewLine}");
+                }
+            }
+
+        }
 
         private static async Task DoBackup(Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch)
         {
@@ -102,7 +119,7 @@ namespace Replica
                     }
                     else if (File.Exists(action.Key))
                     {
-                       
+
                         Console.WriteLine($"Copying: {action.Key}");
 
                         Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
@@ -113,7 +130,7 @@ namespace Replica
 
                 else if (action.Value.ChangeType == WatcherChangeTypes.Deleted)
                 {
-                    
+
                     Console.WriteLine($"Deleting: {action.Key}");
 
                     if (File.Exists(replicaPath))
@@ -126,6 +143,8 @@ namespace Replica
                     }
                 }
             }
+
+            Log(batch);
 
             await Task.CompletedTask;
         }
@@ -150,9 +169,13 @@ namespace Replica
                 }
                 else if (args[i] == "-l")
                 {
-                    logF = args[i + 1];
+                    LogPath = args[i + 1];
                 }
             }
+
+            Directory.CreateDirectory(replica);
+
+
 
             // FolderSyncronization();
 
@@ -176,18 +199,11 @@ namespace Replica
             watcher.IncludeSubdirectories = true;
             watcher.EnableRaisingEvents = true;
 
-           
+
             using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromSeconds(gap));
 
             while (await timer.WaitForNextTickAsync())
             {
-                
-                foreach (var change in changes)
-                {
-                    Console.WriteLine($"QUEUE:{change.SourcePath} -> {change.ChangeType}");
-                }
-
-
                 Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch = new();
                 int count = changes.Count;
                 for (int i = 0; i < count; i++)
@@ -203,33 +219,24 @@ namespace Replica
                     }
                 }
 
-
-
-
-
-                
-                foreach (var b in batch)
-                {
-                    Console.WriteLine($"BATCH:{b.Key} -> {b.Value.ChangeType}");
-                }
-
                 await DoBackup(batch);
             }
 
-
         }
 
+        
 
         //To do:
-        //Add logging
         //Add FolderSyncronization(); method
-        //Add QoL dirs creation        
         //Add error handling
         //Divide into classes        
         //Add comments
         //Final check
 
+
+
     }
+
 }
 
 

@@ -22,8 +22,7 @@ namespace Replica
         static string replica = "";
         static string logF = "";
         static int gap;
-
-        private static ConcurrentDictionary<string, WatcherChangeTypes> changes = new();
+        private static ConcurrentQueue<(string SourcePath, WatcherChangeTypes ChangeType)> changes = new();
 
 
 
@@ -43,7 +42,51 @@ namespace Replica
 
               Console.WriteLine("Log1");
           }*/
+        private static void OnChanged(object sender, FileSystemEventArgs e)
+        {
+            if (e.ChangeType != WatcherChangeTypes.Changed)
+            {
+                return;
+            }
+            //Console.WriteLine($"Changed: {e.FullPath}");
+            changes.Enqueue((e.FullPath, e.ChangeType));
+        }
 
+        private static void OnCreated(object sender, FileSystemEventArgs e)
+        {
+            //string value = $"Created: {e.FullPath}";
+            //Console.WriteLine(value);
+            changes.Enqueue((e.FullPath, e.ChangeType));
+        }
+
+        private static void OnDeleted(object sender, FileSystemEventArgs e)
+        {
+            //Console.WriteLine($"Deleted: {e.FullPath}");
+            changes.Enqueue((e.FullPath, e.ChangeType));
+        }
+
+        private static void OnRenamed(object sender, RenamedEventArgs e)
+        {
+            //Console.WriteLine($"Renamed:");
+            //Console.WriteLine($"    Old: {e.OldFullPath}");
+            //Console.WriteLine($"    New: {e.FullPath}");
+            changes.Enqueue((e.FullPath, e.ChangeType));
+        }
+
+        private static void OnError(object sender, ErrorEventArgs e) =>
+            PrintException(e.GetException());
+
+        private static void PrintException(Exception? ex)
+        {
+            if (ex != null)
+            {
+                Console.WriteLine($"Message: {ex.Message}");
+                Console.WriteLine("Stacktrace:");
+                Console.WriteLine(ex.StackTrace);
+                Console.WriteLine();
+                PrintException(ex.InnerException);
+            }
+        }
 
         private static async Task DoBackup()
         {
@@ -119,28 +162,40 @@ namespace Replica
             watcher.Renamed += OnRenamed;
             watcher.Error += OnError;
 
-            // watcher.Filter = "*.txt";
             watcher.IncludeSubdirectories = true;
             watcher.EnableRaisingEvents = true;
 
-            // using disposes the timer when the application closes
             // backup
             using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromSeconds(gap));
 
             while (await timer.WaitForNextTickAsync())
             {
-
-                
-                ConcurrentDictionary<string, WatcherChangeTypes> changesBatch = new(changes);
-                changes.Clear();
-
-                
-                await DoBackup();
-
-                /*foreach (var change in changes)
+                // Log queue
+                foreach (var change in changes)
                 {
-                    Console.WriteLine($"{change.Key} -> {change.Value}");
-                }*/
+                    Console.WriteLine($"QUEUE:{change.SourcePath} -> {change.ChangeType}");
+                }
+
+                
+                Dictionary<string, WatcherChangeTypes> batch = new();
+                int count = changes.Count;
+                for(int i = 0; i < count; i++)
+                {
+                    if (changes.TryDequeue(out var change))
+                    {
+                        batch[change.SourcePath] = change.ChangeType;
+                    }
+                }
+
+                //await DoBackup(batch);
+
+                
+
+                //Log Dictionary
+                foreach (var b in batch)
+                {
+                    Console.WriteLine($"BATCH:{b.Key} -> {b.Value}");
+                }
             }
 
 
@@ -148,51 +203,7 @@ namespace Replica
 
         
 
-        private static void OnChanged(object sender, FileSystemEventArgs e)
-        {
-            if (e.ChangeType != WatcherChangeTypes.Changed)
-            {
-                return;
-            }
-            Console.WriteLine($"Changed: {e.FullPath}");
-            changes[e.FullPath] = e.ChangeType;
-        }
-
-        private static void OnCreated(object sender, FileSystemEventArgs e)
-        {
-            string value = $"Created: {e.FullPath}";
-            Console.WriteLine(value);
-            changes[e.FullPath] = e.ChangeType;
-        }
-
-        private static void OnDeleted(object sender, FileSystemEventArgs e)
-        {
-            Console.WriteLine($"Deleted: {e.FullPath}");
-            changes[e.FullPath] = e.ChangeType;
-        }
-
-        private static void OnRenamed(object sender, RenamedEventArgs e)
-        {
-            Console.WriteLine($"Renamed:");
-            Console.WriteLine($"    Old: {e.OldFullPath}");
-            Console.WriteLine($"    New: {e.FullPath}");
-            changes[e.FullPath] = e.ChangeType;
-        }
-
-        private static void OnError(object sender, ErrorEventArgs e) =>
-            PrintException(e.GetException());
-
-        private static void PrintException(Exception? ex)
-        {
-            if (ex != null)
-            {
-                Console.WriteLine($"Message: {ex.Message}");
-                Console.WriteLine("Stacktrace:");
-                Console.WriteLine(ex.StackTrace);
-                Console.WriteLine();
-                PrintException(ex.InnerException);
-            }
-        }
+        
 
         /*
         // Create a timer and set a two second interval.

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("veeam")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+163aa97e4d560203c3739e9ced0619a22ab77ecb")]
 [assembly: System.Reflection.AssemblyProductAttribute("veeam")]
 [assembly: System.Reflection.AssemblyTitleAttribute("veeam")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

@@ -22,7 +22,7 @@ namespace Replica
         static string replica = "";
         static string logF = "";
         static int gap;
-        private static ConcurrentQueue<(string SourcePath, WatcherChangeTypes ChangeType)> changes = new();
+        private static ConcurrentQueue<(string SourcePath, string? OldSourcePath, WatcherChangeTypes ChangeType)> changes = new();
 
 
 
@@ -49,20 +49,20 @@ namespace Replica
                 return;
             }
             //Console.WriteLine($"Changed: {e.FullPath}");
-            changes.Enqueue((e.FullPath, e.ChangeType));
+            changes.Enqueue((e.FullPath, null, e.ChangeType));
         }
 
         private static void OnCreated(object sender, FileSystemEventArgs e)
         {
             //string value = $"Created: {e.FullPath}";
             //Console.WriteLine(value);
-            changes.Enqueue((e.FullPath, e.ChangeType));
+            changes.Enqueue((e.FullPath, null, e.ChangeType));
         }
 
         private static void OnDeleted(object sender, FileSystemEventArgs e)
         {
             //Console.WriteLine($"Deleted: {e.FullPath}");
-            changes.Enqueue((e.FullPath, e.ChangeType));
+            changes.Enqueue((e.FullPath, null, e.ChangeType));
         }
 
         private static void OnRenamed(object sender, RenamedEventArgs e)
@@ -70,7 +70,7 @@ namespace Replica
             //Console.WriteLine($"Renamed:");
             //Console.WriteLine($"    Old: {e.OldFullPath}");
             //Console.WriteLine($"    New: {e.FullPath}");
-            changes.Enqueue((e.FullPath, e.ChangeType));
+            changes.Enqueue((e.FullPath, e.OldFullPath, e.ChangeType));
         }
 
         private static void OnError(object sender, ErrorEventArgs e) =>
@@ -88,37 +88,40 @@ namespace Replica
             }
         }
 
-        private static async Task DoBackup()
+        private static async Task DoBackup(Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch)
         {
-            /*foreach (var change in changes)
+            foreach (var action in batch)
             {
-                string sourcePath = change.Key;
-                WatcherChangeTypes changeType = change.Value;
+                string relativePath = Path.GetRelativePath(source, action.Key);
+                string replicaPath = Path.Combine(replica, relativePath);
 
-                if (changeType == WatcherChangeTypes.Created ||
-                    changeType == WatcherChangeTypes.Changed)
+                if (action.Value.ChangeType == WatcherChangeTypes.Created || action.Value.ChangeType == WatcherChangeTypes.Changed)
                 {
                     // Copy source file to replica
-                    Console.WriteLine($"Copying: {sourcePath}");
+                    Console.WriteLine($"Copying: {action.Key}");
 
-                    File.Copy(sourcePath, replica, true);
+                    Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
+                    File.Copy(action.Key, replicaPath, true);
 
-                    changes.TryRemove(sourcePath, out _);
                 }
-                else if (changeType == WatcherChangeTypes.Deleted)
+                else if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                {                 
+                    string oldRelativePath = Path.GetRelativePath(source, action.Value.OldSourcePath!);
+                    string oldReplicaPath = Path.Combine(replica, oldRelativePath);
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
+                    File.Move(oldReplicaPath, replicaPath, true);
+                }
+                else if (action.Value.ChangeType == WatcherChangeTypes.Deleted)
                 {
                     // Delete file from replica
-                    Console.WriteLine($"Deleting: {sourcePath}");
+                    Console.WriteLine($"Deleting: {action.Key}");
 
-                    File.Delete(replica);
-
-                    changes.TryRemove(sourcePath, out _);
+                    File.Delete(replicaPath);
                 }
-
-                changes.TryRemove(sourcePath, out _);
             }
 
-            await Task.CompletedTask;*/
+            await Task.CompletedTask;
         }
 
         static async Task Main(string[] args)
@@ -144,6 +147,8 @@ namespace Replica
                     logF = args[i + 1];
                 }
             }
+
+            // FolderSyncronization();
 
             using var watcher = new FileSystemWatcher(source);
 
@@ -176,53 +181,38 @@ namespace Replica
                     Console.WriteLine($"QUEUE:{change.SourcePath} -> {change.ChangeType}");
                 }
 
-                
-                Dictionary<string, WatcherChangeTypes> batch = new();
+
+                Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch = new();
                 int count = changes.Count;
-                for(int i = 0; i < count; i++)
+                for (int i = 0; i < count; i++)
                 {
                     if (changes.TryDequeue(out var change))
                     {
-                        batch[change.SourcePath] = change.ChangeType;
+                        batch[change.SourcePath] = (change.OldSourcePath, change.ChangeType);
                     }
                 }
 
-                //await DoBackup(batch);
+               
 
-                
+
 
                 //Log Dictionary
                 foreach (var b in batch)
                 {
-                    Console.WriteLine($"BATCH:{b.Key} -> {b.Value}");
+                    Console.WriteLine($"BATCH:{b.Key} -> {b.Value.ChangeType}");
                 }
+
+                await DoBackup(batch);
             }
 
 
         }
 
-        
 
-        
 
-        /*
-        // Create a timer and set a two second interval.
-        aTimer = new System.Timers.Timer();
-        aTimer.Interval = gap*1000;
 
-        // Hook up the Elapsed event for the timer. 
-        aTimer.Elapsed += CopyFilesRecursively;
 
-        // Have the timer fire repeated events (true is the default)
-        aTimer.AutoReset = true;
 
-        // Start the timer
-        aTimer.Enabled = true;
-
-        Console.WriteLine("Press the Enter key to exit the program at any time... ");
-        Console.ReadLine();
-
-        */
         /*  string[] fileList = Directory.GetFiles(source);
 
           foreach(string f in fileList)

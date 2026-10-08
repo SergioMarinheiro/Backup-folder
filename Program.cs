@@ -1,27 +1,15 @@
-﻿
-//Synchronization must be one-way: after the synchronization content of the replica folder should be modified to exactly match content of the source folder;
-
-//Synchronization should be performed periodically;
-
-//File creation/copying/removal operations should be logged to a file and to the console output;
-
-
-//Folder paths, synchronization interval and log file path should be provided using the command line arguments;
-
-
-namespace Replica
+﻿namespace Replica
 {
     using System;
     using System.Collections.Concurrent;
     using System.IO;
-    using System.Timers;
     class Program
     {
         //private static Timer aTimer;
-        static string source = "";
-        static string replica = "";
-        static string LogPath = "";
-        static int gap;
+        private static string source = "";
+        private static string replica = "";
+        private static string LogPath = "";
+        private static int gap;
         private static ConcurrentQueue<(string SourcePath, string? OldSourcePath, WatcherChangeTypes ChangeType)> changes = new();
 
         private static void OnChanged(object sender, FileSystemEventArgs e)
@@ -30,28 +18,21 @@ namespace Replica
             {
                 return;
             }
-            //Console.WriteLine($"Changed: {e.FullPath}");
             changes.Enqueue((e.FullPath, null, e.ChangeType));
         }
 
         private static void OnCreated(object sender, FileSystemEventArgs e)
         {
-            //string value = $"Created: {e.FullPath}";
-            //Console.WriteLine(value);
             changes.Enqueue((e.FullPath, null, e.ChangeType));
         }
 
         private static void OnDeleted(object sender, FileSystemEventArgs e)
         {
-            //Console.WriteLine($"Deleted: {e.FullPath}");
             changes.Enqueue((e.FullPath, null, e.ChangeType));
         }
 
         private static void OnRenamed(object sender, RenamedEventArgs e)
         {
-            //Console.WriteLine($"Renamed:");
-            //Console.WriteLine($"    Old: {e.OldFullPath}");
-            //Console.WriteLine($"    New: {e.FullPath}");
             changes.Enqueue((e.FullPath, e.OldFullPath, e.ChangeType));
         }
 
@@ -71,172 +52,205 @@ namespace Replica
         }
         private static void Log(Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch)
         {
-            foreach (var action in batch)
+            try
             {
-                if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                foreach (var action in batch)
                 {
-                    Console.WriteLine($"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} (Old Path: {action.Value.OldSourcePath})");
-                    File.AppendAllText(LogPath, $"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} (Old Path: {action.Value.OldSourcePath}) {Environment.NewLine}");
+                    if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                    {
+                        Console.WriteLine($"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} (Old Path: {action.Value.OldSourcePath})");
+                        File.AppendAllText(LogPath, $"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} (Old Path: {action.Value.OldSourcePath}) {Environment.NewLine}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType}");
+                        File.AppendAllText(LogPath, $"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} {Environment.NewLine}");
+                    }
                 }
-                else
-                {
-                    Console.WriteLine($"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType}");
-                    File.AppendAllText(LogPath, $"{DateTime.Now}: {action.Key} -> {action.Value.ChangeType} {Environment.NewLine}");
-                }
+            }
+            catch (Exception ex)
+            {
+                PrintException(ex);
             }
 
         }
 
-        private static async Task DoBackup(Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch)
+        private static void DoBackup(Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch)
         {
-            foreach (var action in batch)
+            try
             {
-                string relativePath = Path.GetRelativePath(source, action.Key);
-                string replicaPath = Path.Combine(replica, relativePath);
-
-                if (action.Value.ChangeType == WatcherChangeTypes.Created || action.Value.ChangeType == WatcherChangeTypes.Changed || action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                foreach (var action in batch)
                 {
-                    if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                    string relativePath = Path.GetRelativePath(source, action.Key);
+                    string replicaPath = Path.Combine(replica, relativePath);
+
+                    if (action.Value.ChangeType == WatcherChangeTypes.Created || action.Value.ChangeType == WatcherChangeTypes.Changed || action.Value.ChangeType == WatcherChangeTypes.Renamed)
                     {
-                        string oldRelativePath = Path.GetRelativePath(source, action.Value.OldSourcePath!);
-
-                        string oldReplicaPath = Path.Combine(replica, oldRelativePath);
-
-                        if (File.Exists(oldReplicaPath))
+                        if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
                         {
-                            File.Delete(oldReplicaPath);
+                            string oldRelativePath = Path.GetRelativePath(source, action.Value.OldSourcePath!);
+
+                            string oldReplicaPath = Path.Combine(replica, oldRelativePath);
+
+                            if (File.Exists(oldReplicaPath))
+                            {
+                                File.Delete(oldReplicaPath);
+                            }
+
+                            else if (Directory.Exists(oldReplicaPath))
+                            {
+                                Directory.Delete(oldReplicaPath, true);
+                            }
                         }
 
-                        else if (Directory.Exists(oldReplicaPath))
+                        if (Directory.Exists(action.Key))
                         {
-                            Directory.Delete(oldReplicaPath, true);
+                            Directory.CreateDirectory(replicaPath);
+                        }
+                        else if (File.Exists(action.Key))
+                        {
+                            Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
+                            File.Copy(action.Key, replicaPath, true);
+                        }
+
+                    }
+
+                    else if (action.Value.ChangeType == WatcherChangeTypes.Deleted)
+                    {
+                        if (File.Exists(replicaPath))
+                        {
+                            File.Delete(replicaPath);
+                        }
+                        else if (Directory.Exists(replicaPath))
+                        {
+                            Directory.Delete(replicaPath, true);
                         }
                     }
-
-                    if (Directory.Exists(action.Key))
-                    {
-                        Directory.CreateDirectory(replicaPath);
-                    }
-                    else if (File.Exists(action.Key))
-                    {
-
-                        Console.WriteLine($"Copying: {action.Key}");
-
-                        Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
-                        File.Copy(action.Key, replicaPath, true);
-                    }
-
                 }
 
-                else if (action.Value.ChangeType == WatcherChangeTypes.Deleted)
-                {
+                Log(batch);
 
-                    Console.WriteLine($"Deleting: {action.Key}");
-
-                    if (File.Exists(replicaPath))
-                    {
-                        File.Delete(replicaPath);
-                    }
-                    else if (Directory.Exists(replicaPath))
-                    {
-                        Directory.Delete(replicaPath, true);
-                    }
-                }
+            }
+            catch (Exception ex)
+            {
+                PrintException(ex);
             }
 
-            Log(batch);
+        }
 
-            await Task.CompletedTask;
+        private static void FolderSyncronization(string source, string replica)
+        {
+            try
+            {
+                File.WriteAllText(LogPath, "");
+                Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch = new();
+
+                foreach (string dirPath in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+                {
+                    Directory.CreateDirectory(dirPath.Replace(source, replica));
+
+                    batch[dirPath] = (null, WatcherChangeTypes.Created);
+                }
+
+                //Copy all the files & Replaces any files with the same name
+                foreach (string newPath in Directory.GetFiles(source, "*.*", SearchOption.AllDirectories))
+                {
+                    File.Copy(newPath, newPath.Replace(source, replica), true);
+
+                    batch[newPath] = (null, WatcherChangeTypes.Created);
+                }
+
+                Log(batch);
+
+            }
+            catch (Exception ex)
+            {
+                PrintException(ex);
+            }
+
         }
 
         static async Task Main(string[] args)
         {
-
-
-            for (int i = 0; i < args.Length; i++)
+            try
             {
-                if (args[i] == "-s")
+                for (int i = 0; i < args.Length; i++)
                 {
-                    source = args[i + 1];
-                }
-                else if (args[i] == "-r")
-                {
-                    replica = args[i + 1];
-                }
-                else if (args[i] == "-i")
-                {
-                    gap = Int32.Parse(args[i + 1]);
-                }
-                else if (args[i] == "-l")
-                {
-                    LogPath = args[i + 1];
-                }
-            }
-
-            Directory.CreateDirectory(replica);
-
-
-
-            // FolderSyncronization();
-
-            using var watcher = new FileSystemWatcher(source);
-
-            watcher.NotifyFilter = NotifyFilters.Attributes
-                                | NotifyFilters.CreationTime
-                                | NotifyFilters.DirectoryName
-                                | NotifyFilters.FileName
-                                | NotifyFilters.LastAccess
-                                | NotifyFilters.LastWrite
-                                | NotifyFilters.Security
-                                | NotifyFilters.Size;
-
-            watcher.Changed += OnChanged;
-            watcher.Created += OnCreated;
-            watcher.Deleted += OnDeleted;
-            watcher.Renamed += OnRenamed;
-            watcher.Error += OnError;
-
-            watcher.IncludeSubdirectories = true;
-            watcher.EnableRaisingEvents = true;
-
-
-            using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromSeconds(gap));
-
-            while (await timer.WaitForNextTickAsync())
-            {
-                Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch = new();
-                int count = changes.Count;
-                for (int i = 0; i < count; i++)
-                {
-                    if (changes.TryDequeue(out var change))
+                    if (args[i] == "-s")
                     {
-                        if (batch.TryGetValue(change.SourcePath, out var existing) && existing.ChangeType == WatcherChangeTypes.Renamed)
-                        {
-                            continue;
-                        }
-
-                        batch[change.SourcePath] = (change.OldSourcePath, change.ChangeType);
+                        source = args[i + 1];
+                    }
+                    else if (args[i] == "-r")
+                    {
+                        replica = args[i + 1];
+                    }
+                    else if (args[i] == "-i")
+                    {
+                        gap = Int32.Parse(args[i + 1]);
+                    }
+                    else if (args[i] == "-l")
+                    {
+                        LogPath = args[i + 1];
                     }
                 }
 
-                await DoBackup(batch);
+                Directory.CreateDirectory(replica);
+
+
+
+                FolderSyncronization(source, replica);
+
+                using var watcher = new FileSystemWatcher(source);
+
+                watcher.NotifyFilter = NotifyFilters.Attributes
+                                    | NotifyFilters.CreationTime
+                                    | NotifyFilters.DirectoryName
+                                    | NotifyFilters.FileName
+                                    | NotifyFilters.LastAccess
+                                    | NotifyFilters.LastWrite
+                                    | NotifyFilters.Security
+                                    | NotifyFilters.Size;
+
+                watcher.Changed += OnChanged;
+                watcher.Created += OnCreated;
+                watcher.Deleted += OnDeleted;
+                watcher.Renamed += OnRenamed;
+                watcher.Error += OnError;
+
+                watcher.IncludeSubdirectories = true;
+                watcher.EnableRaisingEvents = true;
+
+
+                using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromSeconds(gap));
+
+                while (await timer.WaitForNextTickAsync())
+                {
+                    Dictionary<string, (string? OldSourcePath, WatcherChangeTypes ChangeType)> batch = new();
+                    int count = changes.Count;
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (changes.TryDequeue(out var change))
+                        {
+                            if (batch.TryGetValue(change.SourcePath, out var existing) && existing.ChangeType == WatcherChangeTypes.Renamed)
+                            {
+                                continue;
+                            }
+
+                            batch[change.SourcePath] = (change.OldSourcePath, change.ChangeType);
+                        }
+                    }
+
+                    DoBackup(batch);
+                }
+
             }
-
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error: {ex.Message}");
+                return;
+            }
         }
-
-        
-
-        //To do:
-        //Add FolderSyncronization(); method
-        //Add error handling
-        //Divide into classes        
-        //Add comments
-        //Final check
-
-
-
     }
-
 }
 
 

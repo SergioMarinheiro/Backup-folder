@@ -23,25 +23,7 @@ namespace Replica
         static string logF = "";
         static int gap;
         private static ConcurrentQueue<(string SourcePath, string? OldSourcePath, WatcherChangeTypes ChangeType)> changes = new();
-
-
-
-        /*  private static async Task CopyFilesRecursively(Object source_, System.Timers.ElapsedEventArgs e)
-          {
-              //Now Create all of the directories
-              foreach (string dirPath in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
-              {
-                  await Directory.CreateDirectory(dirPath.Replace(source, replica));
-              }
-
-              //Copy all the files & Replaces any files with the same name
-              foreach (string newPath in Directory.GetFiles(source, "*.*", SearchOption.AllDirectories))
-              {
-                  File.Copy(newPath, newPath.Replace(source, replica), true);
-              }
-
-              Console.WriteLine("Log1");
-          }*/
+      
         private static void OnChanged(object sender, FileSystemEventArgs e)
         {
             if (e.ChangeType != WatcherChangeTypes.Changed)
@@ -95,29 +77,53 @@ namespace Replica
                 string relativePath = Path.GetRelativePath(source, action.Key);
                 string replicaPath = Path.Combine(replica, relativePath);
 
-                if (action.Value.ChangeType == WatcherChangeTypes.Created || action.Value.ChangeType == WatcherChangeTypes.Changed)
+                if (action.Value.ChangeType == WatcherChangeTypes.Created || action.Value.ChangeType == WatcherChangeTypes.Changed || action.Value.ChangeType == WatcherChangeTypes.Renamed)
                 {
-                    // Copy source file to replica
-                    Console.WriteLine($"Copying: {action.Key}");
+                    if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
+                    {
+                        string oldRelativePath = Path.GetRelativePath(source, action.Value.OldSourcePath!);
 
-                    Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
-                    File.Copy(action.Key, replicaPath, true);
+                        string oldReplicaPath = Path.Combine(replica, oldRelativePath);
+
+                        if (File.Exists(oldReplicaPath))
+                        {
+                            File.Delete(oldReplicaPath);
+                        }
+
+                        else if (Directory.Exists(oldReplicaPath))
+                        {
+                            Directory.Delete(oldReplicaPath, true);
+                        }
+                    }
+
+                    if (Directory.Exists(action.Key))
+                    {
+                        Directory.CreateDirectory(replicaPath);
+                    }
+                    else if (File.Exists(action.Key))
+                    {
+                       
+                        Console.WriteLine($"Copying: {action.Key}");
+
+                        Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
+                        File.Copy(action.Key, replicaPath, true);
+                    }
 
                 }
-                else if (action.Value.ChangeType == WatcherChangeTypes.Renamed)
-                {                 
-                    string oldRelativePath = Path.GetRelativePath(source, action.Value.OldSourcePath!);
-                    string oldReplicaPath = Path.Combine(replica, oldRelativePath);
 
-                    Directory.CreateDirectory(Path.GetDirectoryName(replicaPath)!);
-                    File.Move(oldReplicaPath, replicaPath, true);
-                }
                 else if (action.Value.ChangeType == WatcherChangeTypes.Deleted)
                 {
-                    // Delete file from replica
+                    
                     Console.WriteLine($"Deleting: {action.Key}");
 
-                    File.Delete(replicaPath);
+                    if (File.Exists(replicaPath))
+                    {
+                        File.Delete(replicaPath);
+                    }
+                    else if (Directory.Exists(replicaPath))
+                    {
+                        Directory.Delete(replicaPath, true);
+                    }
                 }
             }
 
@@ -170,12 +176,12 @@ namespace Replica
             watcher.IncludeSubdirectories = true;
             watcher.EnableRaisingEvents = true;
 
-            // backup
+           
             using PeriodicTimer timer = new PeriodicTimer(TimeSpan.FromSeconds(gap));
 
             while (await timer.WaitForNextTickAsync())
             {
-                // Log queue
+                
                 foreach (var change in changes)
                 {
                     Console.WriteLine($"QUEUE:{change.SourcePath} -> {change.ChangeType}");
@@ -188,15 +194,20 @@ namespace Replica
                 {
                     if (changes.TryDequeue(out var change))
                     {
+                        if (batch.TryGetValue(change.SourcePath, out var existing) && existing.ChangeType == WatcherChangeTypes.Renamed)
+                        {
+                            continue;
+                        }
+
                         batch[change.SourcePath] = (change.OldSourcePath, change.ChangeType);
                     }
                 }
 
-               
 
 
 
-                //Log Dictionary
+
+                
                 foreach (var b in batch)
                 {
                     Console.WriteLine($"BATCH:{b.Key} -> {b.Value.ChangeType}");
@@ -209,24 +220,14 @@ namespace Replica
         }
 
 
-
-
-
-
-        /*  string[] fileList = Directory.GetFiles(source);
-
-          foreach(string f in fileList)
-          {
-              // Remove path from the file name.
-              string file_ = f.Substring(source.Length + 1);
-
-              // Use the Path.Combine method to safely append the file name to the path.
-              // Will overwrite if the destination file already exists.
-              File.Copy(Path.Combine(source, file_), Path.Combine(replica, file_), true);
-
-
-          }*/
-
+        //To do:
+        //Add logging
+        //Add FolderSyncronization(); method
+        //Add QoL dirs creation        
+        //Add error handling
+        //Divide into classes        
+        //Add comments
+        //Final check
 
     }
 }

@@ -5,7 +5,6 @@
     using System.IO;
     class Program
     {
-        //private static Timer aTimer;
         private static string source = "";
         private static string replica = "";
         private static string LogPath = "";
